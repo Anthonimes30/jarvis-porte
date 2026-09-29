@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>JARVIS</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#050a12">
+<link rel="apple-touch-icon" href="icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<style>
+ body{background:#050a12;color:#dff3ff;font-family:system-ui,-apple-system,sans-serif;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  min-height:100vh;margin:0;padding:24px;text-align:center}
+ h1{font-size:22px;letter-spacing:.22em;font-weight:500;margin:0 0 6px}
+ #m{font-size:14px;line-height:1.7;opacity:.8;max-width:340px}
+ a.b{display:inline-block;background:rgba(95,216,255,.14);border:1px solid rgba(95,216,255,.4);
+  color:#9fe6ff;padding:18px 30px;border-radius:14px;text-decoration:none;
+  font-size:18px;margin:22px 0;word-break:break-all;max-width:320px}
+ .err{color:#ffb38f}
+ small{opacity:.6;display:block;margin-top:14px;line-height:1.6}
+</style></head><body>
+<h1>J.A.R.V.I.S.</h1>
+<div id="m">Ouverture de la porte…</div>
+<script>
+(async () => {
+  const m = document.getElementById('m');
+  const dire = (t, err) => { m.innerHTML = t; m.className = err ? 'err' : ''; };
+
+  /* LA CLE.
+     Elle arrive d'abord dans le fragment du lien (jamais envoye sur le
+     reseau). On la garde ensuite ICI, dans le telephone, pour que
+     l'APPLICATION installee fonctionne : une fois posee sur l'ecran
+     d'accueil, elle s'ouvre sans fragment. Sans cette memoire, l'icone
+     serait inutilisable — et c'est precisement ce qu'Anthony demandait.
+     La cle n'est donc jamais inscrite dans le manifeste public. */
+  let cle = location.hash.slice(1);
+  if (cle) {
+    try { localStorage.setItem('jarvis_porte_cle', cle); } catch (e) {}
+    // On retire la cle de la barre d'adresse : elle est memorisee.
+    try { history.replaceState(null, '', location.pathname); } catch (e) {}
+  } else {
+    try { cle = localStorage.getItem('jarvis_porte_cle') || ''; } catch (e) {}
+  }
+  if (!cle) return dire("Cette application n'a pas encore ta clé.<br><br>"
+    + "Ouvre une première fois le lien complet que Jarvis t'a donné, "
+    + "celui qui contient un # suivi d'une longue suite de caractères.", true);
+
+  try {
+    const r = await fetch('adresse.json?t=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) throw new Error('adresse introuvable (' + r.status + ')');
+    const p = await r.json();
+
+    const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+    const b64url = s => b64(s.replace(/-/g, '+').replace(/_/g, '/'));
+    const k = await crypto.subtle.importKey('raw', b64url(cle), 'AES-GCM', false, ['decrypt']);
+    const clair = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: b64(p.iv) }, k, b64(p.ct));
+    const url = new TextDecoder().decode(clair);
+    if (!/^https:\/\//.test(url)) throw new Error('adresse invalide');
+
+    const ver = p.v ? 'JARVIS ' + p.v + ' · ' : '';
+    const min = p.quand ? Math.round((Date.now() - p.quand) / 60000) : null;
+    const age = min === null ? ''
+      : (min < 60 ? 'Adresse publiée il y a ' + min + ' min'
+                  : 'Adresse publiée il y a ' + Math.round(min / 60) + ' h');
+    dire(ver + age + '<a class="b" href="' + url + '">Ouvrir Jarvis</a>'
+      + '<small>Si rien ne s\'ouvre, le PC est éteint : '
+      + 'le tunnel n\'existe que quand Jarvis tourne.</small>');
+    location.replace(url);
+  } catch (e) {
+    dire("Impossible d'ouvrir la porte : " + e.message
+      + "<br><br>Soit la clé est fausse, soit Jarvis n'a pas publié d'adresse "
+      + "depuis son dernier démarrage.", true);
+  }
+})();
+</script></body></html>
