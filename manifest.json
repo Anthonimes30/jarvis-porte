@@ -1,0 +1,20 @@
+{
+  "name": "JARVIS 3.63.0",
+  "short_name": "JARVIS 3.63.0",
+  "description": "Accès à Jarvis 3.63.0, où que soit son adresse du jour.",
+  "version": "3.63.0",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#050a12",
+  "theme_color": "#050a12",
+  "icons": [
+    {
+      "src": "icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
