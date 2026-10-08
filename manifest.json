@@ -1,8 +1,8 @@
 {
-  "name": "JARVIS 5.06.0",
-  "short_name": "JARVIS 5.06.0",
-  "description": "Accès à Jarvis 5.06.0, où que soit son adresse du jour.",
-  "version": "5.06.0",
+  "name": "JARVIS 5.07.0",
+  "short_name": "JARVIS 5.07.0",
+  "description": "Accès à Jarvis 5.07.0, où que soit son adresse du jour.",
+  "version": "5.07.0",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
