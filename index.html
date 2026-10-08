@@ -12,12 +12,13 @@
   display:flex;flex-direction:column;align-items:center;justify-content:center;
   min-height:100vh;margin:0;padding:24px;text-align:center}
  h1{font-size:22px;letter-spacing:.22em;font-weight:500;margin:0 0 6px}
- #m{font-size:14px;line-height:1.7;opacity:.8;max-width:340px}
- a.b{display:inline-block;background:rgba(95,216,255,.14);border:1px solid rgba(95,216,255,.4);
+ #m{font-size:14px;line-height:1.7;opacity:.85;max-width:340px}
+ a.b,button.b{display:inline-block;background:rgba(95,216,255,.14);border:1px solid rgba(95,216,255,.4);
   color:#9fe6ff;padding:18px 30px;border-radius:14px;text-decoration:none;
-  font-size:18px;margin:22px 0;word-break:break-all;max-width:320px}
+  font-size:18px;margin:22px 0 8px;word-break:break-all;max-width:320px;cursor:pointer}
+ button.inst{background:rgba(95,216,255,.28);font-size:16px;padding:13px 22px}
  .err{color:#ffb38f}
- small{opacity:.6;display:block;margin-top:14px;line-height:1.6}
+ small{opacity:.6;display:block;margin-top:14px;line-height:1.6;max-width:320px}
 </style></head><body>
 <h1>J.A.R.V.I.S.</h1>
 <div id="m">Ouverture de la porte…</div>
@@ -26,6 +27,10 @@
   const m = document.getElementById('m');
   const dire = (t, err) => { m.innerHTML = t; m.className = err ? 'err' : ''; };
 
+  /* Le service worker : il permet a l'icone installee de s'ouvrir meme
+     quand le PC est eteint, au lieu d'une page d'erreur du navigateur. */
+  try { if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {}); } catch (e) {}
+
   /* LA CLE.
      Elle arrive d'abord dans le fragment du lien (jamais envoye sur le
      reseau). On la garde ensuite ICI, dans le telephone, pour que
@@ -33,17 +38,21 @@
      d'accueil, elle s'ouvre sans fragment. Sans cette memoire, l'icone
      serait inutilisable — et c'est precisement ce qu'Anthony demandait.
      La cle n'est donc jamais inscrite dans le manifeste public. */
-  let cle = location.hash.slice(1);
-  if (cle) {
-    try { localStorage.setItem('jarvis_porte_cle', cle); } catch (e) {}
+  let clef = location.hash.slice(1);
+  if (clef) {
+    try { localStorage.setItem('jarvis_porte_cle', clef); } catch (e) {}
     // On retire la cle de la barre d'adresse : elle est memorisee.
     try { history.replaceState(null, '', location.pathname); } catch (e) {}
   } else {
-    try { cle = localStorage.getItem('jarvis_porte_cle') || ''; } catch (e) {}
+    try { clef = localStorage.getItem('jarvis_porte_cle') || ''; } catch (e) {}
   }
-  if (!cle) return dire("Cette application n'a pas encore ta clé.<br><br>"
+  if (!clef) return dire("Cette application n'a pas encore ta clé.<br><br>"
     + "Ouvre une première fois le lien complet que Jarvis t'a donné, "
     + "celui qui contient un # suivi d'une longue suite de caractères.", true);
+
+  /* INSTALLEE, OU SIMPLEMENT OUVERTE ? Toute la difference est ici. */
+  const installee = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+    || window.navigator.standalone === true;
 
   try {
     const r = await fetch('adresse.json?t=' + Date.now(), { cache: 'no-store' });
@@ -52,21 +61,51 @@
 
     const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
     const b64url = s => b64(s.replace(/-/g, '+').replace(/_/g, '/'));
-    const k = await crypto.subtle.importKey('raw', b64url(cle), 'AES-GCM', false, ['decrypt']);
+    const k = await crypto.subtle.importKey('raw', b64url(clef), 'AES-GCM', false, ['decrypt']);
     const clair = await crypto.subtle.decrypt(
       { name: 'AES-GCM', iv: b64(p.iv) }, k, b64(p.ct));
     const url = new TextDecoder().decode(clair);
     if (!/^https:\/\//.test(url)) throw new Error('adresse invalide');
+
+    if (installee) {
+      // Deja installee : on file droit vers Jarvis, comme avant.
+      dire('JARVIS ' + (p.v || '') + ' — ouverture…');
+      location.replace(url);
+      return;
+    }
 
     const ver = p.v ? 'JARVIS ' + p.v + ' · ' : '';
     const min = p.quand ? Math.round((Date.now() - p.quand) / 60000) : null;
     const age = min === null ? ''
       : (min < 60 ? 'Adresse publiée il y a ' + min + ' min'
                   : 'Adresse publiée il y a ' + Math.round(min / 60) + ' h');
-    dire(ver + age + '<a class="b" href="' + url + '">Ouvrir Jarvis</a>'
-      + '<small>Si rien ne s\'ouvre, le PC est éteint : '
-      + 'le tunnel n\'existe que quand Jarvis tourne.</small>');
-    location.replace(url);
+    m.innerHTML = ver + age
+      + '<a class="b" href="' + url + '">Ouvrir Jarvis</a>'
+      + '<button class="b inst" id="inst" hidden>Installer l'application</button>'
+      + '<small id="aide">Pour poser Jarvis sur ton écran d'accueil : '
+      + 'menu du navigateur (les ⋮ en haut à droite), puis '
+      + '<b>« Installer l'application »</b> ou <b>« Ajouter à l'écran d'accueil »</b>.</small>'
+      + '<small>Si rien ne s'ouvre, le PC est éteint : '
+      + 'le tunnel n'existe que quand Jarvis tourne.</small>';
+
+    /* L'invitation native, quand le navigateur veut bien la proposer :
+       un appui sur « Installer » vaut tous les menus. */
+    let invite = null;
+    window.addEventListener('beforeinstallprompt', e => {
+      e.preventDefault(); invite = e;
+      const b = document.getElementById('inst');
+      if (b) b.hidden = false;
+    });
+    const bouton = document.getElementById('inst');
+    if (bouton) bouton.onclick = async () => {
+      if (!invite) return;
+      invite.prompt();
+      const choix = await invite.userChoice.catch(() => null);
+      if (choix && choix.outcome === 'accepted') dire('Installation en cours…');
+      invite = null;
+    };
+    window.addEventListener('appinstalled', () => dire('Jarvis est installé sur ton écran d'accueil. '
+      + '<a class="b" href="' + url + '">Ouvrir Jarvis</a>'));
   } catch (e) {
     dire("Impossible d'ouvrir la porte : " + e.message
       + "<br><br>Soit la clé est fausse, soit Jarvis n'a pas publié d'adresse "
